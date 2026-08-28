@@ -1,7 +1,7 @@
 # Automated Safety Stock & Inventory Optimization System
 
-**A dynamic ABC-XYZ reorder point and working-capital model for a multi-market distribution network.**
-Built end-to-end in **SQL (MySQL) + Power BI**
+**A dynamic ABC-XYZ reorder point and working capital model for a multi-market distribution network.**
+Built end to end in **SQL (MySQL) + Power BI**
 
 ---
 
@@ -19,23 +19,13 @@ Built end-to-end in **SQL (MySQL) + Power BI**
 
 ## 2. Solution Architecture
 
-```mermaid
-flowchart LR
-    A[Raw CSV<br/>180,519 order-line records] --> B[MySQL: Data Cleaning<br/>fraud/cancel exclusion, date normalization]
-    B --> C[MySQL: Transformation<br/>recursive CTE calendar spine, zero-fill]
-    C --> D[MySQL: Classification<br/>ABC revenue Pareto + XYZ CV segmentation]
-    D --> E[sku_master export<br/>118 SKUs × statistical features]
-    E --> F[Power BI / DAX: Modeling<br/>combined-variance Safety Stock, ROP, EOQ]
-    F --> G[Power BI / DAX: Risk Scoring<br/>4-tier PO Priority framework]
-    G --> H[Power BI Dashboard<br/>live What-If scenario simulation]
-    H --> I[Drill-Through SKU Action Center<br/>per-SKU recommended action]
-```
+<img width="1308" height="410" alt="End-to-End Inventory Analytics Workflow" src="https://github.com/user-attachments/assets/88d4edde-0bb3-4d11-9389-e74e0f7fdcfe" />
 
 **Pipeline stages:**
 - **Ingestion** — raw DataCo Supply Chain CSV (180,519 rows, 53 columns) loaded into MySQL 8.0
-- **Transformation** — cancelled/fraud order exclusion (7,754 rows), recursive-CTE zero-filled monthly demand spine (118 SKUs × 37 months), lead-time/demand statistical aggregation
-- **Classification & Modeling** — ABC (revenue Pareto) × XYZ (coefficient of variation) segmentation; combined-variance safety stock `SS = Z·√(L·σd² + D̄²·σL²)`; Reorder Point; EOQ (Wilson formula); 4-tier PO Priority classifier (Emergency Expedite / Standard Reorder / Monitor / No Action)
-- **Business Visualization** — interactive Power BI dashboard with live What-If parameters (Service Level, Holding Cost %, Order Cost, Coverage Multiplier) and a per-SKU drill-through Action Center
+- **Transformation** — cancelled/fraud order exclusion (7,754 rows), recursive CTE zero filled monthly demand spine (118 SKUs × 37 months), lead time/demand statistical aggregation
+- **Classification & Modeling** — ABC (revenue Pareto) × XYZ (coefficient of variation) segmentation; combined variance safety stock `SS = Z·√(L·σd² + D̄²·σL²)`; Reorder Point; EOQ (Wilson formula); 4 tier PO Priority classifier (Emergency Expedite / Standard Reorder / Monitor / No Action)
+- **Business Visualization** — interactive Power BI dashboard with live What-If parameters (Service Level, Holding Cost %, Order Cost, Coverage Multiplier) and a per SKU drill through Action Center
 
 
 ---
@@ -68,10 +58,12 @@ Every one of these was caught by validating model output against source data, no
 
 **Executive Dashboard** — catalog-wide KPIs, ABC×XYZ risk heatmap, ranked SKU alert table with PO Priority action tiers:
 
-![Main Dashboard](dashboards/main_dashboard.png)
+<img width="1094" height="611" alt="Screenshot 2026-08-28 at 10 50 11 AM" src="https://github.com/user-attachments/assets/5cbdf54b-c02a-4b7e-b120-6aab394b4ee2" />
+
 
 **SKU Action Center** — drill-through detail: per-SKU safety stock, EOQ, cost breakdown, and 37-month demand trend:
 
-![SKU Drill-Through](dashboards/sku_drill_through.png)
+<img width="1078" height="601" alt="Screenshot 2026-08-28 at 10 50 27 AM" src="https://github.com/user-attachments/assets/7b4f1066-e5f3-46b0-b973-ca2a1721e2e2" />
+
 
 ---
