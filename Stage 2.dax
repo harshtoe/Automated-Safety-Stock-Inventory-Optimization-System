@@ -1,0 +1,230 @@
+// STEP 1
+
+Service Level Table = DATATABLE(
+    "service Level%", INTEGER,
+    "Z Factor", DOUBLE,
+    {
+        {90, 1.28},
+        {95, 1.645},
+        {99, 2.33}
+    }
+)
+
+
+// STEP 2
+
+
+// STEP 3
+
+Service Level Z =
+VAR SelectedLevel = SELECTEDVALUE('Service Level Table'[service Level%], 95)
+RETURN LOOKUPVALUE('Service Level Table'[Z Factor], 'Service Level Table'[service Level%], SelectedLevel)
+
+Selected Service Level % =
+SELECTEDVALUE('Service Level Table'[service Level%], 95)
+
+Annual Demand =
+SUMX('supplychain_analytics sku_master', 'supplychain_analytics sku_master'[avg_demand] * 12)
+
+Safety Stock (Units) =
+VAR Z = [Service Level Z]
+RETURN
+SUMX(
+    'supplychain_analytics sku_master',
+    VAR LeadTimeMonths = 'supplychain_analytics sku_master'[avg_leadtime] / 30
+    VAR StdDevLeadTimeMonths = 'supplychain_analytics sku_master'[stddev_leadtime] / 30
+    RETURN
+    Z * SQRT(
+        (LeadTimeMonths * 'supplychain_analytics sku_master'[stddev_demand] ^ 2)
+        + ('supplychain_analytics sku_master'[avg_demand] ^ 2 * StdDevLeadTimeMonths ^ 2)
+    )
+)
+
+Reorder Point (ROP) (Units) =
+SUMX(
+    'supplychain_analytics sku_master',
+    VAR LeadTimeMonths = 'supplychain_analytics sku_master'[avg_leadtime] / 30
+    VAR StdDevLeadTimeMonths = 'supplychain_analytics sku_master'[stddev_leadtime] / 30
+    RETURN
+    ('supplychain_analytics sku_master'[avg_demand] * LeadTimeMonths)
+    + ( [Service Level Z] * SQRT(
+        (LeadTimeMonths * 'supplychain_analytics sku_master'[stddev_demand] ^ 2)
+        + ('supplychain_analytics sku_master'[avg_demand] ^ 2 * StdDevLeadTimeMonths ^ 2)
+      ))
+)
+
+EOQ (Units) =
+VAR OrderCost = 'Order Cost'[Order Cost Value]
+VAR HoldingPct = 'Holding Cost %'[Holding Cost % Value]
+RETURN
+SUMX(
+    'supplychain_analytics sku_master',
+    VAR UnitPrice = DIVIDE('supplychain_analytics sku_master'[total_revenue], 'supplychain_analytics sku_master'[avg_demand] * 37)
+    VAR AnnualDemandSKU = 'supplychain_analytics sku_master'[avg_demand] * 12
+    VAR HoldingCostPerUnit = UnitPrice * HoldingPct
+    RETURN SQRT( DIVIDE(2 * AnnualDemandSKU * OrderCost, HoldingCostPerUnit) )
+)
+
+Simulated Stock Level (Units) =
+VAR Coverage = 'Coverage Multiplier'[Coverage Multiplier Value]
+RETURN SUMX('supplychain_analytics sku_master', 'supplychain_analytics sku_master'[avg_demand] * Coverage)
+
+Days of Supply (ROP-Based) =
+VAR Z = [Service Level Z]
+RETURN
+SUMX(
+    'supplychain_analytics sku_master',
+    VAR LeadTimeMonths = 'supplychain_analytics sku_master'[avg_leadtime] / 30
+    VAR StdDevLeadTimeMonths = 'supplychain_analytics sku_master'[stddev_leadtime] / 30
+    VAR ROP =
+        ('supplychain_analytics sku_master'[avg_demand] * LeadTimeMonths)
+        + Z * SQRT(
+            (LeadTimeMonths * 'supplychain_analytics sku_master'[stddev_demand] ^ 2)
+            + ('supplychain_analytics sku_master'[avg_demand] ^ 2 * StdDevLeadTimeMonths ^ 2)
+          )
+    VAR DailyDemand = 'supplychain_analytics sku_master'[avg_demand] / 30
+    RETURN DIVIDE(ROP, DailyDemand)
+)
+
+Stock to ROP Ratio =
+VAR Z = [Service Level Z]
+RETURN
+SUMX(
+    'supplychain_analytics sku_master',
+    VAR LeadTimeMonths = 'supplychain_analytics sku_master'[avg_leadtime] / 30
+    VAR StdDevLeadTimeMonths = 'supplychain_analytics sku_master'[stddev_leadtime] / 30
+    VAR StockLevel = 'supplychain_analytics sku_master'[avg_demand] * 'Coverage Multiplier'[Coverage Multiplier Value]
+    VAR ROP =
+        ('supplychain_analytics sku_master'[avg_demand] * LeadTimeMonths)
+        + Z * SQRT(
+            (LeadTimeMonths * 'supplychain_analytics sku_master'[stddev_demand] ^ 2)
+            + ('supplychain_analytics sku_master'[avg_demand] ^ 2 * StdDevLeadTimeMonths ^ 2)
+          )
+    RETURN DIVIDE(StockLevel, ROP)
+)
+
+
+// STEP 4
+
+PO Priority Tier =
+VAR Z = [Service Level Z]
+RETURN
+SUMX(
+    'supplychain_analytics sku_master',
+    VAR LeadTimeMonths = 'supplychain_analytics sku_master'[avg_leadtime] / 30
+    VAR StdDevLeadTimeMonths = 'supplychain_analytics sku_master'[stddev_leadtime] / 30
+    VAR SafetyStock =
+        Z * SQRT(
+            (LeadTimeMonths * 'supplychain_analytics sku_master'[stddev_demand] ^ 2)
+            + ('supplychain_analytics sku_master'[avg_demand] ^ 2 * StdDevLeadTimeMonths ^ 2)
+        )
+    VAR ROP = ('supplychain_analytics sku_master'[avg_demand] * LeadTimeMonths) + SafetyStock
+    VAR OnHand = 'supplychain_analytics sku_master'[avg_demand] * 'Coverage Multiplier'[Coverage Multiplier Value]
+    RETURN
+    SWITCH(
+        TRUE(),
+        OnHand <= SafetyStock, 1,
+        OnHand <= ROP, 2,
+        OnHand <= ROP * 1.15, 3,
+        4
+    )
+)
+
+PO Action =
+SWITCH(
+    [PO Priority Tier],
+    1, "🔴 Tier 1 — Emergency Expedite",
+    2, "🟠 Tier 2 — Standard Reorder",
+    3, "🟡 Tier 3 — Monitor",
+    "🟢 Healthy"
+)
+
+Action Window =
+SWITCH(
+    [PO Priority Tier],
+    1, "Required within 24 Hours",
+    2, "Required within 24–48 Hours",
+    3, "Review Next Cycle",
+    "No Action Required"
+)
+
+Recommended Action Detail =
+SWITCH(
+    [PO Priority Tier],
+    1, "Issue PO immediately. Request express freight from supplier.",
+    2, "Issue standard PO at normal supplier lead time.",
+    3, "No immediate action — monitor trend, consider batching with next planned order.",
+    "No action needed — stock is healthy relative to reorder point."
+)
+
+Reorder Breach Count =
+COUNTROWS(
+    FILTER(
+        'supplychain_analytics sku_master',
+        [PO Priority Tier] <= 2
+    )
+)
+
+Revenue at Risk ($) =
+VAR Result =
+    SUMX(
+        FILTER(
+            'supplychain_analytics sku_master',
+            [PO Priority Tier] <= 2
+        ),
+        'supplychain_analytics sku_master'[total_revenue]
+    )
+RETURN COALESCE(Result, 0)
+
+% SKUs at Risk =
+DIVIDE([Reorder Breach Count], DISTINCTCOUNT('supplychain_analytics sku_master'[product_card_id]))
+
+SKUs to Monitor (Tier 3) =
+COUNTROWS(FILTER('supplychain_analytics sku_master', [PO Priority Tier] = 3))
+
+Stockout Risk Status =
+VAR Z = [Service Level Z]
+VAR Coverage = 'Coverage Multiplier'[Coverage Multiplier Value]
+VAR StockLevel = SUMX('supplychain_analytics sku_master', 'supplychain_analytics sku_master'[avg_demand] * Coverage)
+VAR ROP = [Reorder Point (ROP) (Units)]
+RETURN IF(StockLevel < ROP, "At Risk", "Healthy")
+
+
+// STEP 5
+
+Safety Stock Working Capital ($) =
+VAR Z = [Service Level Z]
+RETURN
+SUMX(
+    'supplychain_analytics sku_master',
+    VAR UnitPrice = DIVIDE('supplychain_analytics sku_master'[total_revenue], 'supplychain_analytics sku_master'[avg_demand] * 37)
+    VAR LeadTimeMonths = 'supplychain_analytics sku_master'[avg_leadtime] / 30
+    VAR StdDevLeadTimeMonths = 'supplychain_analytics sku_master'[stddev_leadtime] / 30
+    VAR SS_SKU = Z * SQRT(
+        (LeadTimeMonths * 'supplychain_analytics sku_master'[stddev_demand] ^ 2)
+        + ('supplychain_analytics sku_master'[avg_demand] ^ 2 * StdDevLeadTimeMonths ^ 2)
+    )
+    RETURN SS_SKU * UnitPrice
+)
+
+Annual Holding Cost ($) =
+VAR UnitPrice = DIVIDE(SUM('supplychain_analytics sku_master'[total_revenue]), SUM('supplychain_analytics sku_master'[avg_demand]) * 37)
+RETURN [EOQ (Units)] / 2 * UnitPrice * 'Holding Cost %'[Holding Cost % Value]
+
+Annual Ordering Cost ($) =
+DIVIDE([Annual Demand], [EOQ (Units)]) * 'Order Cost'[Order Cost Value]
+
+Avg Lead Time (Days) =
+AVERAGEX('supplychain_analytics sku_master', 'supplychain_analytics sku_master'[avg_leadtime])
+
+
+// STEP 6
+
+Total Monthly Demand =
+SUM('supplychain_analytics monthly_demand'[monthly_qty])
+
+Total Monthly Demand (Complete Months) =
+CALCULATE(
+    [Total Monthly Demand],
+    KEEPFILTERS('supplychain_analytics monthly_demand'[demand_month] <= DATE(2017,9,30))
+)
